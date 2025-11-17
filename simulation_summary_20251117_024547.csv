@@ -1,0 +1,17 @@
+Metric,Value
+Ticker,AAA
+Model Type,Bootstrap
+Initial Price,15.1671
+Horizon Days,30
+Number of Paths,1000
+Mean,15.42
+Standard Deviation,1.98
+Median,15.27
+Minimum,9.58
+Maximum,25.60
+P5,12.35
+P25,14.10
+P75,16.61
+P95,18.86
+VaR95,2.81 (18.6%)
+Execution Time,9 ms

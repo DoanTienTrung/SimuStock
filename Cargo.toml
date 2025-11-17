@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "core_sim",
+    "data_io", 
+    "app_gui"
+]
+resolver = "2"

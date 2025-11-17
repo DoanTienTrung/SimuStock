@@ -1,0 +1,591 @@
+import { Button, ComboBox, LineEdit, CheckBox, VerticalBox, HorizontalBox, TabWidget, ScrollView } from "std-widgets.slint";
+
+export struct SimulationParams {
+    initial_price: float,
+    horizon_days: int,
+    num_paths: int,
+    dt: float,
+    mu: float,
+    sigma: float,
+    seed: int,
+    use_antithetic: bool,
+    model_type: string,
+}
+
+export struct StockData {
+    ticker: string,
+    date_range: string,
+    record_count: int,
+    last_price: float,
+}
+
+export component MainWindow inherits Window {
+    title: "Monte Carlo Stock Price Simulator";
+    
+    
+    min-width: 1000px;
+    min-height: 700px;
+
+    in-out property <string> csv_path;
+    in-out property <[string]> available_tickers;
+    in-out property <string> selected_ticker;
+    in-out property <StockData> stock_data;
+    in-out property <SimulationParams> sim_params: {
+        initial_price: 100.0,
+        horizon_days: 30,
+        num_paths: 1000,
+        dt: 1.0,
+        mu: 0.0,
+        sigma: 0.2,
+        seed: 42,
+        use_antithetic: false,
+        model_type: "GBM",
+    };
+    in-out property <image> chart_image;
+    in-out property <image> histogram_image;
+    in-out property <string> summary_stats;
+    in-out property <bool> csv_loaded: false;
+    in-out property <bool> simulation_running: false;
+    
+    // Individual statistics 
+    in-out property <string> stat_mean: "";
+    in-out property <string> stat_std: "";
+    in-out property <string> stat_median: "";
+    in-out property <string> stat_min: "";
+    in-out property <string> stat_max: "";
+    in-out property <string> stat_p5: "";
+    in-out property <string> stat_p25: "";
+    in-out property <string> stat_p75: "";
+    in-out property <string> stat_p95: "";
+    in-out property <string> stat_var95: "";
+    in-out property <string> execution_time: "";
+
+    callback load_csv_clicked();
+    callback ticker_selected(string);  
+    callback estimate_params_clicked();
+    callback run_simulation_clicked();
+    callback export_csv_clicked();
+    callback export_chart_clicked();
+
+    VerticalBox {
+        // Header
+        Rectangle {
+            height: 60px;
+            background: #2c3e50;
+            
+            HorizontalBox {
+                alignment: center;
+                
+                Text {
+                    text: "Monte Carlo Stock Price Simulator";
+                    font-size: 24px;
+                    font-weight: 700;
+                    color: white;
+                }
+            }
+        }
+
+        // Main Content
+        HorizontalBox {
+            spacing: 15px;
+            
+            // Left Panel - Data Input & Configuration
+            VerticalBox {
+                width: 35%;
+                
+                ScrollView {
+                    VerticalBox {
+                        spacing: 20px;
+                        
+                        // Data Input Panel
+                        Rectangle {
+                            background: #f8f9fa;
+                            border-radius: 8px;
+                            
+                            VerticalBox {
+                                spacing: 15px;
+                                
+                                Text {
+                                    text: "📊 Data Input";
+                                    font-size: 18px;
+                                    font-weight: 600;
+                                    color: #495057;
+                                }
+
+                                Button {
+                                    text: "Load CSV File";
+                                    height: 40px;
+                                    clicked => { load_csv_clicked(); }
+                                }
+
+                                if csv_loaded: VerticalBox {
+                                    spacing: 10px;
+                                    
+                                    HorizontalBox {
+                                        Text {
+                                            text: "Select Ticker:";
+                                            width: 100px;
+                                        }
+                                        ComboBox {
+                                            model: available_tickers;
+                                            current-value: selected_ticker;
+                                            // Khi user chọn ticker → gọi callback
+                                            selected(value) => {
+                                                root.ticker_selected(value);
+                                            }
+                                        }
+                                    }
+                                    
+                                    Rectangle {
+                                        background: white;
+                                        border-radius: 6px;
+                                        height: 120px;
+                                        
+                                        VerticalBox {
+                                            spacing: 8px;
+                                            
+                                            Text { 
+                                                text: "Ticker: " + stock_data.ticker; 
+                                                font-weight: 600;
+                                            }
+                                            Text { 
+                                                text: "Date Range: " + stock_data.date_range; 
+                                                font-size: 12px;
+                                            }
+                                            Text { 
+                                                text: "Records: " + stock_data.record_count; 
+                                                font-size: 12px;
+                                            }
+                                            Text { 
+                                                text: "Last Price: " + stock_data.last_price; 
+                                                font-weight: 600;
+                                                color: #28a745;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Configuration Panel
+                        Rectangle {
+                            background: #f8f9fa;
+                            border-radius: 8px;
+                            
+                            VerticalBox {
+                                spacing: 15px;
+                                
+                                Text {
+                                    text: "⚙️ Simulation Parameters";
+                                    font-size: 18px;
+                                    font-weight: 600;
+                                    color: #495057;
+                                }
+
+                                // Model Selection
+                                HorizontalBox {
+                                    Text { 
+                                        text: "Model:"; 
+                                        width: 120px; 
+                                        vertical-alignment: center;
+                                    }
+                                    ComboBox {
+                                        model: ["GBM", "Bootstrap"];
+                                        current-value: sim_params.model_type;
+                                        selected(value) => {
+                                            sim_params.model_type = value;
+                                        }
+                                    }
+                                }
+
+                                HorizontalBox {
+                                    Text { 
+                                        text: "Initial Price:"; 
+                                        width: 120px; 
+                                    }
+                                    LineEdit {
+                                        text: sim_params.initial_price;
+                                        edited(text) => { 
+                                            sim_params.initial_price = text.to_float(); 
+                                        }
+                                    }
+                                }
+                                
+                                HorizontalBox {
+                                    Text { 
+                                        text: "Horizon (days):"; 
+                                        width: 120px; 
+                                    }
+                                    LineEdit {
+                                        text: sim_params.horizon_days;
+                                        edited(text) => { 
+                                            sim_params.horizon_days = text.to_float(); 
+                                        }
+                                    }
+                                }
+                                
+                                HorizontalBox {
+                                    Text { 
+                                        text: "Number of Paths:"; 
+                                        width: 120px; 
+                                    }
+                                    LineEdit {
+                                        text: sim_params.num_paths;
+                                        edited(text) => { 
+                                            sim_params.num_paths = text.to_float(); 
+                                        }
+                                    }
+                                }
+                                
+                                HorizontalBox {
+                                    Text { 
+                                        text: "dt:"; 
+                                        width: 120px; 
+                                    }
+                                    LineEdit {
+                                        text: sim_params.dt;
+                                        edited(text) => { 
+                                            sim_params.dt = text.to_float(); 
+                                        }
+                                    }
+                                }
+                                
+                                HorizontalBox {
+                                    Text { 
+                                        text: "μ (drift):"; 
+                                        width: 120px; 
+                                    }
+                                    LineEdit {
+                                        text: sim_params.mu;
+                                        edited(text) => { 
+                                            sim_params.mu = text.to_float(); 
+                                        }
+                                    }
+                                }
+                                
+                                HorizontalBox {
+                                    Text { 
+                                        text: "σ (volatility):"; 
+                                        width: 120px; 
+                                    }
+                                    LineEdit {
+                                        text: sim_params.sigma;
+                                        edited(text) => { 
+                                            sim_params.sigma = text.to_float(); 
+                                        }
+                                    }
+                                }
+                                
+                                HorizontalBox {
+                                    Text { 
+                                        text: "Random Seed:"; 
+                                        width: 120px; 
+                                    }
+                                    LineEdit {
+                                        text: sim_params.seed;
+                                        edited(text) => { 
+                                            sim_params.seed = text.to_float(); 
+                                        }
+                                    }
+                                }
+                                
+                                CheckBox {
+                                    text: "Use Antithetic Variates";
+                                    checked: sim_params.use_antithetic;
+                                    toggled => { 
+                                        sim_params.use_antithetic = !sim_params.use_antithetic; 
+                                    }
+                                }
+                                
+                                VerticalBox {
+                                    spacing: 10px;
+                                    
+                                    Button {
+                                        text: "Estimate μ/σ from Data";
+                                        enabled: csv_loaded;
+                                        height: 40px;
+                                        clicked => { estimate_params_clicked(); }
+                                    }
+                                    
+                                    Button {
+                                        text: simulation_running ? "Running..." : "Run Simulation";
+                                        enabled: csv_loaded && !simulation_running;
+                                        height: 45px;
+                                        clicked => { run_simulation_clicked(); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            //  Results 
+            VerticalBox {
+                width: 65%;
+                spacing: 10px;
+                
+                Text {
+                    text: "📈 Results";
+                    font-size: 20px;
+                    font-weight: 600;
+                    color: #495057;
+                    height: 30px;
+                }
+                
+                ScrollView {
+                    VerticalBox {
+                        spacing: 15px;
+                        padding:15px;
+                        
+                        // Charts Section 
+                        HorizontalBox {
+                            height: 350px;
+                            spacing: 10px;
+                            
+                            // Price Paths Chart
+                            Rectangle {
+                                width: 50%;
+                                background: white;
+                                border-radius: 6px;
+                                border-width: 1px;
+                                border-color: #dee2e6;
+                                
+                                VerticalBox {
+                                    Text {
+                                        text: "Price Paths";
+                                        font-size: 14px;
+                                        font-weight: 600;
+                                        color: #495057;
+                                        height: 30px;
+                                        horizontal-alignment: center;
+                                    }
+                                    
+                                    Rectangle {
+                                        if chart_image.width > 0: Image {
+                                            source: chart_image;
+                                            width: 100%;
+                                            height: 100%;
+                                            image-fit: contain;
+                                        }
+                                        
+                                        if chart_image.width == 0: Text {
+                                            text: "Run simulation to see\nprice paths chart";
+                                            color: #6c757d;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Histogram
+                            Rectangle {
+                                width: 50%;
+                                background: white;
+                                border-radius: 6px;
+                                border-width: 1px;
+                                border-color: #dee2e6;
+                                
+                                VerticalBox {
+                                    Text {
+                                        text: "Terminal Prices Histogram";
+                                        font-size: 14px;
+                                        font-weight: 600;
+                                        color: #495057;
+                                        height: 30px;
+                                        horizontal-alignment: center;
+                                    }
+                                    
+                                    Rectangle {
+                                        if histogram_image.width > 0: Image {
+                                            source: histogram_image;
+                                            width: 100%;
+                                            height: 100%;
+                                            image-fit: contain;
+                                        }
+                                        
+                                        if histogram_image.width == 0: Text {
+                                            text: "Run simulation to see\nhistogram";
+                                            color: #6c757d;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Summary Statistics 
+                        Rectangle {
+                            background: #f8f9fa;
+                            border-radius: 6px;
+                            border-width: 1px;
+                            border-color: #dee2e6;
+                            height: 240px;
+                            
+                            VerticalBox {
+                                spacing: 10px;
+                                
+                                HorizontalBox {
+                                    Text {
+                                        text: "📊 Summary Statistics";
+                                        font-size: 16px;
+                                        font-weight: 600;
+                                        color: #495057;
+                                        horizontal-alignment: center;
+                                    }
+                                    
+                                    if execution_time != "": Text {
+                                        text: "⏱️ " + execution_time;
+                                        font-size: 12px;
+                                        color: #28a745;
+                                        horizontal-alignment: right;
+                                    }
+                                }
+                                
+                                
+                                if summary_stats != "": HorizontalBox {
+                                    spacing: 15px;
+                                    
+                                    // Left Column - Basic Stats
+                                    VerticalBox {
+                                        width: 50%;
+                                        spacing: 8px;
+                                        
+                                        Rectangle {
+                                            background: white;
+                                            border-radius: 4px;
+                                            height: 160px;
+                                            
+                                            VerticalBox {
+                                                spacing: 5px;
+                                                
+                                                Text {
+                                                    text: "Basic Statistics";
+                                                    font-size: 12px;
+                                                    font-weight: 600;
+                                                    color: #007bff;
+                                                    horizontal-alignment: center;
+                                                    height: 25px;
+                                                }
+                                                
+                                                ScrollView {
+                                                    VerticalBox {
+                                                        spacing: 6px;
+                                                        padding: 8px;
+                                                        
+                                                        HorizontalBox {
+                                                            Text { text: "Mean:"; width: 70px; font-size: 11px; }
+                                                            Text { text: stat_mean; font-size: 11px; font-weight: 600; horizontal-alignment: left; }
+                                                        }
+                                                        
+                                                        HorizontalBox {
+                                                            Text { text: "Std Dev:"; width: 70px; font-size: 11px; }
+                                                            Text { text: stat_std; font-size: 11px; font-weight: 600; horizontal-alignment: left; }
+                                                        }
+                                                        
+                                                        HorizontalBox {
+                                                            Text { text: "Median:"; width: 70px; font-size: 11px; }
+                                                            Text { text: stat_median; font-size: 11px; font-weight: 600; horizontal-alignment: left; }
+                                                        }
+                                                        
+                                                        HorizontalBox {
+                                                            Text { text: "Min:"; width: 70px; font-size: 11px; }
+                                                            Text { text: stat_min; font-size: 11px; font-weight: 600; horizontal-alignment: left; }
+                                                        }
+                                                        
+                                                        HorizontalBox {
+                                                            Text { text: "Max:"; width: 70px; font-size: 11px; }
+                                                            Text { text: stat_max; font-size: 11px; font-weight: 600; horizontal-alignment: left; }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
+                                    //  - Risk Metrics
+                                    VerticalBox {
+                                        width: 50%;
+                                        spacing: 8px;
+                                        
+                                        Rectangle {
+                                            background: white;
+                                            border-radius: 4px;
+                                            height: 160px;
+                                            
+                                            VerticalBox {
+                                                spacing: 5px;
+                                                
+                                                Text {
+                                                    text: "Risk Metrics";
+                                                    font-size: 12px;
+                                                    font-weight: 600;
+                                                    color: #dc3545;
+                                                    horizontal-alignment: center;
+                                                    height: 25px;
+                                                }
+                                                
+                                                ScrollView {
+                                                    VerticalBox {
+                                                        spacing: 6px;
+                                                        padding: 8px;
+                                                        
+                                                        HorizontalBox {
+                                                            Text { text: "P5:"; width: 50px; font-size: 11px; }
+                                                            Text { text: stat_p5; font-size: 11px; font-weight: 600; horizontal-alignment: left; }
+                                                        }
+                                                        
+                                                        HorizontalBox {
+                                                            Text { text: "P25:"; width: 50px; font-size: 11px; }
+                                                            Text { text: stat_p25; font-size: 11px; font-weight: 600; horizontal-alignment: left; }
+                                                        }
+                                                        
+                                                        HorizontalBox {
+                                                            Text { text: "P75:"; width: 50px; font-size: 11px; }
+                                                            Text { text: stat_p75; font-size: 11px; font-weight: 600; horizontal-alignment: left; }
+                                                        }
+                                                        
+                                                        HorizontalBox {
+                                                            Text { text: "P95:"; width: 50px; font-size: 11px; }
+                                                            Text { text: stat_p95; font-size: 11px; font-weight: 600; horizontal-alignment: left; }
+                                                        }
+                                                        
+                                                        HorizontalBox {
+                                                            Text { text: "VaR95:"; width: 50px; font-size: 11px; color: #dc3545; }
+                                                            Text { text: stat_var95; font-size: 11px; font-weight: 600; color: #dc3545; horizontal-alignment: left; }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Export Buttons 
+                        HorizontalBox {
+                            spacing: 15px;
+                            height: 60px;
+                            
+                            Button {
+                                text: "📄 Export Summary (CSV)";
+                                height: 45px;
+                                clicked => { export_csv_clicked(); }
+                            }
+                            
+                            Button {
+                                text: "📊 Export Chart (PNG)";
+                                height: 45px;
+                                clicked => { export_chart_clicked(); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+    }
+}
